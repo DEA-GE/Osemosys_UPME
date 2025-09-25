@@ -13,7 +13,6 @@ set SEASON :=
 # load "Conversionls.csv" : [TIMESLICE,SEASON] Conversionls=VALUE;
 
 
-
 load "EMISSION.csv"  format=set: EMISSION;
 load "FUEL.csv"  format=set: FUEL;
 load "TIMESLICE.csv"  format=set: TIMESLICE;
