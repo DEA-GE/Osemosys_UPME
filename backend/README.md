@@ -13,6 +13,21 @@ Si vienes de una versión anterior con `backend/.env.example`, elimínalo y deja
 
 ---
 
+## Artefactos locales (no subir)
+
+Durante ejecución local/simulaciones se generan archivos transitorios. No deben versionarse.
+
+| Ruta | Contenido |
+|------|-----------|
+| `backend/tmp/local/` | SQLite local, `simulation_result.json`, `simulation_kpis.csv`, `simulation_events.csv`, `charts/*.png`, `tables/*.csv` |
+| `backend/tmp/simulation-results/` | `simulation_job_<id>.json` |
+| `backend/tmp/local/parity/` | salidas de paridad CLI vs Docker |
+| `backend/tmp/local/comparison_csvs/` | CSV temporales de comparación |
+
+Estos paths están protegidos por `.gitignore`.
+
+---
+
 ## 1. Descripción General del Proyecto
 
 Este backend implementa un sistema de ejecución de escenarios energéticos con enfoque **DB-first** para OSEMOSYS, donde los insumos del modelo se gestionan en PostgreSQL y las corridas se ejecutan asíncronamente vía cola.
@@ -422,6 +437,27 @@ Health:
 
 ```bash
 curl http://localhost:8010/api/v1/health
+```
+
+## Operación rápida (sin Docker, SQLite local)
+
+Desde `backend/`:
+
+```bash
+cp .env.local.example .env.local
+python scripts/init_local_db.py
+uvicorn app.main:app --reload
+```
+
+Variables y archivos clave para este modo:
+- `backend/.env.local` (se crea desde `backend/.env.local.example`).
+- `DATABASE_URL=sqlite:///./tmp/local/osemosys_local.db`
+- `SIMULATION_MODE=sync` (ejecución local sin Redis/worker).
+
+Health:
+
+```bash
+curl http://localhost:8000/api/v1/health
 ```
 
 Usuario seed:
