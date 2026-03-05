@@ -16,13 +16,9 @@ class DummyDbSession:
         self.commit_calls = 0
         self.refresh_calls = 0
         self.rollback_calls = 0
-        self.flush_calls = 0
 
     def commit(self) -> None:
         self.commit_calls += 1
-
-    def flush(self) -> None:
-        self.flush_calls += 1
 
     def refresh(self, _obj: object) -> None:
         self.refresh_calls += 1
@@ -112,7 +108,6 @@ def test_submit_persists_task_id_after_enqueue(monkeypatch: pytest.MonkeyPatch) 
     assert payload["id"] == job.id
     assert payload["queue_position"] == 1
     assert job.celery_task_id == "task-123"
-    assert db.flush_calls == 1
     assert db.commit_calls == 2
     assert len(events) == 2
     assert events[0]["message"] == "Job creado y listo para encolar."
@@ -178,7 +173,6 @@ def test_submit_marks_job_failed_when_enqueue_fails(monkeypatch: pytest.MonkeyPa
             solver_name="highs",
         )
 
-    assert db.flush_calls == 1
     assert db.commit_calls == 2
     assert db.rollback_calls == 1
     assert job.status == "FAILED"

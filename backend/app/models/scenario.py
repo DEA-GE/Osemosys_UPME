@@ -1,7 +1,6 @@
 """Modelo ORM de escenarios de análisis OSEMOSYS."""
 
-from sqlalchemy import CheckConstraint, DateTime, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, CheckConstraint, DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -31,7 +30,7 @@ class Scenario(Base):
     created_at: Mapped[object] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    udc_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None)
+    udc_config: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
 
 
 # ============================================================================

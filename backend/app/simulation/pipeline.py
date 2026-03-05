@@ -20,8 +20,7 @@ import logging
 from time import perf_counter
 from typing import Any, Final
 
-from sqlalchemy import func
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import func, insert
 from sqlalchemy.orm import Session
 
 from app.models import OsemosysParamValue, OsemosysOutputParamValue, SimulationJob
@@ -206,6 +205,7 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     # ------------------------------------------------------------------
     t1 = perf_counter()
     _check_cancel_requested(db, job_id=job_id)
+
     SimulationRepository.add_event(
         db,
         job_id=job_id,
@@ -214,6 +214,7 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
         message="Construyendo estructura de datos para optimizacion.",
         progress=20.0,
     )
+    
     db.commit()
     job.progress = 40.0
     db.commit()
@@ -302,7 +303,7 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     output_rows = _build_output_rows(solution, job_id=job.id)
     for i in range(0, len(output_rows), BATCH_SIZE):
         batch = output_rows[i : i + BATCH_SIZE]
-        db.execute(pg_insert(OsemosysOutputParamValue), batch)
+        db.execute(insert(OsemosysOutputParamValue), batch)
         db.flush()
 
     stage_times[f"{STAGE_PERSIST_RESULTS}_seconds"] = perf_counter() - t3

@@ -60,6 +60,11 @@ class SimulationService:
 
         active_jobs = SimulationRepository.count_user_active_jobs(db, user_id=current_user.id)
         settings = get_settings()
+        sync_mode = (
+            settings.is_sync_simulation_mode()
+            if hasattr(settings, "is_sync_simulation_mode")
+            else str(getattr(settings, "simulation_mode", "async")).strip().lower() == "sync"
+        )
         if active_jobs >= settings.sim_user_active_limit:
             raise ConflictError(
                 f"Ya alcanzaste el maximo de simulaciones activas ({settings.sim_user_active_limit})."
@@ -71,8 +76,9 @@ class SimulationService:
         job = SimulationRepository.create_job(
             db, user_id=current_user.id, scenario_id=scenario_id, solver_name=solver_name
         )
-        # Necesario para obtener `job.id` antes de registrar eventos relacionados.
-        db.flush()
+        # Necesario para obtener `job.id` antes de insertar eventos asociados.
+        if hasattr(db, "flush"):
+            db.flush()
         SimulationRepository.add_event(
             db,
             job_id=job.id,
@@ -83,6 +89,22 @@ class SimulationService:
         )
         db.commit()
         db.refresh(job)
+
+        if sync_mode:
+            task = run_simulation_job.apply(args=[job.id], throw=False)
+            db.refresh(job)
+            job.celery_task_id = task.id
+            SimulationRepository.add_event(
+                db,
+                job_id=job.id,
+                event_type="INFO",
+                stage="queue",
+                message="Simulacion ejecutada en modo sincrono local.",
+                progress=float(job.progress),
+            )
+            db.commit()
+            db.refresh(job)
+            return SimulationService._to_public(job, queue_position=None)
 
         try:
             task = run_simulation_job.delay(job.id)

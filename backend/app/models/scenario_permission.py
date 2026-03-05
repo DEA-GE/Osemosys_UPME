@@ -1,7 +1,6 @@
 """Modelo ORM para permisos de usuarios por escenario."""
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -25,7 +24,7 @@ class ScenarioPermission(Base):
     )
     user_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
     user_id: Mapped[object | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("core.user.id", ondelete="RESTRICT"), nullable=True
+        Uuid, ForeignKey("core.user.id", ondelete="RESTRICT"), nullable=True
     )
     can_edit_direct: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     can_propose: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

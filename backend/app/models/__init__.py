@@ -8,8 +8,8 @@ from .daytype import Daytype
 from .emission import Emission
 from .fuel import Fuel
 from .mode_of_operation import ModeOfOperation
-from .osemosys_output_param_value import OsemosysOutputParamValue
 from .osemosys_param_value import OsemosysParamValue
+from .osemosys_output_param_value import OsemosysOutputParamValue
 from .parameter import Parameter
 from .parameter_storage import ParameterStorage
 from .parameter_value_audit import ParameterValueAudit

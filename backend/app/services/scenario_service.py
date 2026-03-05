@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.db.dialect import osemosys_table
 from app.models import (
     Emission,
     Fuel,
@@ -56,12 +57,13 @@ class ScenarioService:
         """
         total = 0
         cursor = 0
+        osemosys_param_value_table = osemosys_table("osemosys_param_value")
 
         while True:
             max_id_in_batch = db.execute(
-                text("""
+                text(f"""
                     SELECT MAX(id) FROM (
-                        SELECT id FROM osemosys.osemosys_param_value
+                        SELECT id FROM {osemosys_param_value_table}
                         WHERE id_scenario = :src AND id > :cursor
                         ORDER BY id
                         LIMIT :batch
@@ -74,8 +76,8 @@ class ScenarioService:
                 break
 
             cnt = db.execute(
-                text("""
-                    INSERT INTO osemosys.osemosys_param_value
+                text(f"""
+                    INSERT INTO {osemosys_param_value_table}
                         (id_scenario, param_name,
                          id_region, id_technology, id_fuel, id_emission,
                          id_timeslice, id_mode_of_operation,
@@ -87,7 +89,7 @@ class ScenarioService:
                         id_timeslice, id_mode_of_operation,
                         id_season, id_daytype, id_dailytimebracket,
                         id_storage_set, id_udc_set, year, value
-                    FROM osemosys.osemosys_param_value
+                    FROM {osemosys_param_value_table}
                     WHERE id_scenario = :src
                       AND id > :cursor
                       AND id <= :max_id
@@ -117,9 +119,13 @@ class ScenarioService:
         Las dimensiones que parameter_value no tiene (timeslice, mode, season, etc.)
         quedan NULL y se completan después por run_notebook_preprocess.
         """
+        osemosys_param_value_table = osemosys_table("osemosys_param_value")
+        parameter_value_table = osemosys_table("parameter_value")
+        parameter_table = osemosys_table("parameter")
+        parameter_storage_table = osemosys_table("parameter_storage")
         result = db.execute(
-            text("""
-                INSERT INTO osemosys.osemosys_param_value
+            text(f"""
+                INSERT INTO {osemosys_param_value_table}
                     (id_scenario, param_name,
                      id_region, id_technology, id_fuel, id_emission,
                      id_timeslice, id_mode_of_operation,
@@ -131,9 +137,9 @@ class ScenarioService:
                     ps.timesline, NULL,
                     ps.season, ps.daytype, ps.dailytimebracket,
                     ps.id_storage_set, NULL, pv.year, pv.value
-                FROM osemosys.parameter_value pv
-                JOIN osemosys.parameter p ON pv.id_parameter = p.id
-                LEFT JOIN osemosys.parameter_storage ps ON ps.id_parameter_value = pv.id
+                FROM {parameter_value_table} pv
+                JOIN {parameter_table} p ON pv.id_parameter = p.id
+                LEFT JOIN {parameter_storage_table} ps ON ps.id_parameter_value = pv.id
             """),
             {"target_id": target_scenario_id},
         )
