@@ -1,7 +1,6 @@
 """Modelo ORM para resultados de simulacion almacenados en BD."""
 
-from sqlalchemy import Float, ForeignKey, Index, Integer, String
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, Float, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -41,4 +40,4 @@ class OsemosysOutputParamValue(Base):
     value: Mapped[float] = mapped_column(Float, nullable=False)
     value2: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    index_json: Mapped[object | None] = mapped_column(JSONB, nullable=True)
+    index_json: Mapped[object | None] = mapped_column(JSON, nullable=True)

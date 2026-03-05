@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -41,6 +41,7 @@ class Settings(BaseSettings):
 
     # Queue / simulation
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+    simulation_mode: str = Field(default="async", alias="SIMULATION_MODE")
     sim_max_concurrency: int = Field(default=3, alias="SIM_MAX_CONCURRENCY")
     sim_user_active_limit: int = Field(default=1, alias="SIM_USER_ACTIVE_LIMIT")
 
@@ -53,6 +54,15 @@ class Settings(BaseSettings):
         if not self.cors_origins:
             return []
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    def is_sqlite(self) -> bool:
+        """Indica si `DATABASE_URL` apunta a SQLite."""
+        normalized = (self.database_url or "").strip().lower()
+        return normalized.startswith("sqlite:///") or normalized.startswith("sqlite+pysqlite:///")
+
+    def is_sync_simulation_mode(self) -> bool:
+        """Indica si la simulación debe ejecutarse en modo síncrono local."""
+        return (self.simulation_mode or "").strip().lower() == "sync"
 
 
 @lru_cache

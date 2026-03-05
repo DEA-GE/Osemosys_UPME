@@ -15,6 +15,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import get_settings
 from app.db.base import Base
+from app.db.dialect import schema_translate_map
 
 # Importa todos los modelos para registrar metadata
 import app.models  # noqa: F401
@@ -29,17 +30,23 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 
 target_metadata = Base.metadata
 
+IS_SQLITE = settings.is_sqlite()
+SCHEMA_MAP = schema_translate_map()
+
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
-    context.configure(
+    configure_kwargs = dict(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
-        include_schemas=True,
-        version_table_schema="public",
         compare_type=True,
+        include_schemas=not IS_SQLITE,
+        schema_translate_map=SCHEMA_MAP,
     )
+    if not IS_SQLITE:
+        configure_kwargs["version_table_schema"] = "public"
+    context.configure(**configure_kwargs)
 
     with context.begin_transaction():
         context.run_migrations()
@@ -53,13 +60,16 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
+        configure_kwargs = dict(
             connection=connection,
             target_metadata=target_metadata,
-            include_schemas=True,
-            version_table_schema="public",
             compare_type=True,
+            include_schemas=not IS_SQLITE,
+            schema_translate_map=SCHEMA_MAP,
         )
+        if not IS_SQLITE:
+            configure_kwargs["version_table_schema"] = "public"
+        context.configure(**configure_kwargs)
 
         with context.begin_transaction():
             context.run_migrations()

@@ -12,11 +12,21 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
+from app.db.dialect import schema_translate_map
 
 settings = get_settings()
 
 # `pool_pre_ping` ayuda a evitar conexiones muertas en despliegues largos.
-engine = create_engine(settings.database_url, pool_pre_ping=True)
+connect_args = {}
+if settings.is_sqlite():
+    connect_args["check_same_thread"] = False
+
+engine = create_engine(
+    settings.database_url,
+    pool_pre_ping=True,
+    connect_args=connect_args,
+    execution_options={"schema_translate_map": schema_translate_map()},
+)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 

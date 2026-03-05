@@ -8,11 +8,12 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
+    Uuid,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -34,7 +35,7 @@ class SimulationJob(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[object] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("core.user.id", ondelete="RESTRICT"), nullable=False
+        Uuid, ForeignKey("core.user.id", ondelete="RESTRICT"), nullable=False
     )
     scenario_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("osemosys.scenario.id", ondelete="RESTRICT"), nullable=False
@@ -58,6 +59,6 @@ class SimulationJob(Base):
     total_unmet: Mapped[float | None] = mapped_column(Float, nullable=True)
     records_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     osemosys_param_records: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    stage_times_json: Mapped[object | None] = mapped_column(JSONB, nullable=True)
-    model_timings_json: Mapped[object | None] = mapped_column(JSONB, nullable=True)
-    inputs_summary_json: Mapped[object | None] = mapped_column(JSONB, nullable=True)
+    stage_times_json: Mapped[object | None] = mapped_column(JSON, nullable=True)
+    model_timings_json: Mapped[object | None] = mapped_column(JSON, nullable=True)
+    inputs_summary_json: Mapped[object | None] = mapped_column(JSON, nullable=True)

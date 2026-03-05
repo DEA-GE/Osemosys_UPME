@@ -17,10 +17,17 @@ from app.simulation.core.solver import get_solver_availability
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+broker_url = settings.redis_url
+backend_url = settings.redis_url
+if settings.is_sync_simulation_mode():
+    # En modo local síncrono no dependemos de Redis.
+    broker_url = "memory://"
+    backend_url = "cache+memory://"
+
 celery_app = Celery(
     "osemosys_simulation",
-    broker=settings.redis_url,
-    backend=settings.redis_url,
+    broker=broker_url,
+    backend=backend_url,
 )
 
 celery_app.conf.update(
