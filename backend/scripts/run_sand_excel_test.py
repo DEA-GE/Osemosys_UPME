@@ -1,25 +1,13 @@
-"""Importa el Excel SAND (hoja Parameters), ejecuta la simulación y guarda el resultado.
+"""Runner CLI local: Excel -> importación -> simulación -> artefactos.
 
-Permite probar los mismos datos en la app y en el notebook Jupyter y comparar resultados.
-
-Uso (desde backend, con venv activo o en contenedor):
-  python scripts/run_sand_excel_test.py
-  python scripts/run_sand_excel_test.py --excel "C:/ruta/al/SAND_04_02_2026.xlsm"
-  python scripts/run_sand_excel_test.py --excel "C:/ruta/al/archivo.xlsm" --replace --solver glpk
-
-Requisitos:
-  - Usuario "seed" existente en la BD (scripts/seed.py).
-  - Archivo .xlsm o .xlsx con hoja "Parameters" en formato SAND (columna parameter, columnas de año, etc.).
-
-Salida:
-  - Crea o actualiza escenario "SAND_04_02_2026" con los datos del Excel.
-  - Ejecuta la simulación (highs por defecto; use --solver glpk para alinear con notebook).
-  - Escribe JSON en backend/tmp/sand_04_02_2026_result.json para comparar con el notebook.
+No requiere frontend ni levantar uvicorn. Ejecuta contra la base local
+configurada en `DATABASE_URL` (recomendado SQLite en `.env.local`).
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from pathlib import Path
@@ -30,28 +18,59 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.core.config import get_settings
 from app.db.session import SessionLocal
-from app.models import OsemosysParamValue, Scenario, User
+from app.models import OsemosysParamValue, Scenario, SimulationJob, User
+from app.repositories.simulation_repository import SimulationRepository
 from app.services.official_import_service import OfficialImportService
 from app.services.scenario_service import ScenarioService
+from app.services.simulation_service import SimulationService
 from app.services.sand_notebook_preprocess import run_notebook_preprocess
-from app.simulation.osemosys_core import run_osemosys_from_db
 
 DEFAULT_EXCEL = (
     r"C:\Users\jchav\OneDrive - Universidad de los Andes\Documentos\Trabajo UPME\Archivos osmosys\Excel\SAND_04_02_2026.xlsm"
 )
-SCENARIO_NAME = "SAND_04_02_2026"
-SHEET_NAME = "Parameters"
-OUTPUT_FILENAME = "sand_04_02_2026_result.json"
+DEFAULT_SCENARIO_NAME = "SAND_04_02_2026"
+DEFAULT_SHEET_NAME = "Parameters"
+DEFAULT_SEED_USERNAME = "seed"
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Importar Excel Parameters, ejecutar simulación y guardar resultado")
+def _write_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Importar Excel Parameters, ejecutar simulación y exportar artefactos JSON/CSV"
+    )
     parser.add_argument(
         "--excel",
         type=Path,
-        default=Path(DEFAULT_EXCEL),
+        required=True,
         help=f"Ruta al archivo .xlsm/.xlsx (default: {DEFAULT_EXCEL})",
+    )
+    parser.add_argument(
+        "--scenario-name",
+        type=str,
+        default=DEFAULT_SCENARIO_NAME,
+        help=f"Nombre del escenario destino (default: {DEFAULT_SCENARIO_NAME})",
+    )
+    parser.add_argument(
+        "--sheet-name",
+        type=str,
+        default=DEFAULT_SHEET_NAME,
+        help=f"Nombre de hoja a importar (default: {DEFAULT_SHEET_NAME})",
+    )
+    parser.add_argument(
+        "--seed-username",
+        type=str,
+        default=DEFAULT_SEED_USERNAME,
+        help=f"Usuario que ejecuta/importa (default: {DEFAULT_SEED_USERNAME})",
     )
     parser.add_argument(
         "--replace",
@@ -64,6 +83,17 @@ def main() -> int:
         default="highs",
         help="Solver a usar (glpk para alinear con notebook por defecto)",
     )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=PROJECT_ROOT / "tmp" / "local",
+        help="Directorio de salida para artefactos (default: backend/tmp/local)",
+    )
+    return parser
+
+
+def main() -> int:
+    parser = _build_parser()
     args = parser.parse_args()
 
     excel_path = args.excel
@@ -72,18 +102,29 @@ def main() -> int:
         print("        Usa --excel para indicar la ruta correcta.")
         return 1
 
+    settings = get_settings()
+    print(f"  DATABASE_URL      : {settings.database_url}")
+    print(f"  SIMULATION_MODE   : {settings.simulation_mode}")
+    if not settings.is_sync_simulation_mode():
+        print("  [aviso] SIMULATION_MODE no es 'sync'; la ejecución dependerá de broker/worker si está en async.")
+
     content = excel_path.read_bytes()
     filename = excel_path.name
+    output_dir = args.output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_json = output_dir / "simulation_result.json"
+    out_kpis_csv = output_dir / "simulation_kpis.csv"
+    out_events_csv = output_dir / "simulation_events.csv"
 
     with SessionLocal() as session:
-        user = session.execute(select(User).where(User.username == "seed")).scalar_one_or_none()
+        user = session.execute(select(User).where(User.username == args.seed_username)).scalar_one_or_none()
         if not user:
-            print("[ERROR] No existe usuario 'seed'. Ejecuta scripts/seed.py primero.")
+            print(f"[ERROR] No existe usuario '{args.seed_username}'. Ejecuta scripts/seed.py primero.")
             return 1
 
         scenario = session.execute(
             select(Scenario).where(
-                Scenario.name == SCENARIO_NAME,
+                Scenario.name == args.scenario_name,
                 Scenario.is_template.is_(False),
             )
         ).scalar_one_or_none()
@@ -99,8 +140,8 @@ def main() -> int:
             scenario = ScenarioService.create(
                 session,
                 current_user=user,
-                name=SCENARIO_NAME,
-                description="Importado desde Excel SAND (hoja Parameters) para prueba y comparación con notebook",
+                name=args.scenario_name,
+                description=f"Importado desde Excel ({args.sheet_name}) en modo local CLI",
                 edit_policy="OWNER_ONLY",
                 is_template=False,
             )
@@ -108,13 +149,13 @@ def main() -> int:
         else:
             print(f"  Usando escenario existente: {scenario.name} (id={scenario.id})")
 
-        print(f"  Importando hoja '{SHEET_NAME}' desde {filename}...")
+        print(f"  Importando hoja '{args.sheet_name}' desde {filename}...")
         import_result = OfficialImportService.import_xlsm(
             session,
             filename=filename,
             content=content,
             imported_by=user.username,
-            selected_sheet_name=SHEET_NAME,
+            selected_sheet_name=args.sheet_name,
             scenario_id_override=scenario.id,
         )
         print(f"  Import: {import_result.get('inserted', 0)} insertados, {import_result.get('updated', 0)} actualizados, {import_result.get('skipped', 0)} omitidos.")
@@ -135,11 +176,79 @@ def main() -> int:
         )
         session.commit()
         print(f"  Ejecutando simulación (solver={args.solver})...")
-        result = run_osemosys_from_db(
+        job_payload = SimulationService.submit(
             session,
+            current_user=user,
             scenario_id=scenario.id,
             solver_name=args.solver,
         )
+        job_id = int(job_payload["id"])
+        job = session.get(SimulationJob, job_id)
+        if job and job.status == "SUCCEEDED":
+            result = SimulationService.get_result(
+                session,
+                current_user=user,
+                job_id=job_id,
+            )
+        else:
+            result = {
+                "job_id": job_id,
+                "scenario_id": int(scenario.id),
+                "solver_name": args.solver,
+                "records_used": int(job.records_used or 0) if job else 0,
+                "osemosys_param_records": int(job.osemosys_param_records or 0) if job else 0,
+                "objective_value": float(job.objective_value or 0.0) if job else 0.0,
+                "solver_status": (job.model_timings_json or {}).get("solver_status", "unknown")
+                if job
+                else "unknown",
+                "coverage_ratio": float(job.coverage_ratio or 0.0) if job else 0.0,
+                "total_demand": float(job.total_demand or 0.0) if job else 0.0,
+                "total_dispatch": float(job.total_dispatch or 0.0) if job else 0.0,
+                "total_unmet": float(job.total_unmet or 0.0) if job else 0.0,
+                "dispatch": [],
+                "unmet_demand": [],
+                "new_capacity": [],
+                "annual_emissions": [],
+                "sol": {},
+                "intermediate_variables": {},
+                "osemosys_inputs_summary": job.inputs_summary_json if job else [],
+                "stage_times": job.stage_times_json if job else {},
+                "model_timings": job.model_timings_json if job else {},
+                "job_status": job.status if job else "UNKNOWN",
+                "error_message": job.error_message if job else "No se pudo recuperar el job",
+            }
+        events, _ = SimulationRepository.list_events(session, job_id=job_id, row_offset=0, limit=100000)
+        kpi_rows = [
+            {
+                "job_id": result.get("job_id"),
+                "scenario_id": result.get("scenario_id"),
+                "solver_name": result.get("solver_name"),
+                "solver_status": result.get("solver_status"),
+                "objective_value": result.get("objective_value"),
+                "coverage_ratio": result.get("coverage_ratio"),
+                "total_demand": result.get("total_demand"),
+                "total_dispatch": result.get("total_dispatch"),
+                "total_unmet": result.get("total_unmet"),
+                "records_used": result.get("records_used"),
+                "osemosys_param_records": result.get("osemosys_param_records"),
+                "job_status": job.status if job else None,
+                "queued_at": str(job.queued_at) if job else None,
+                "started_at": str(job.started_at) if job else None,
+                "finished_at": str(job.finished_at) if job else None,
+            }
+        ]
+        event_rows = [
+            {
+                "id": ev.id,
+                "job_id": ev.job_id,
+                "event_type": ev.event_type,
+                "stage": ev.stage,
+                "message": ev.message,
+                "progress": ev.progress,
+                "created_at": str(ev.created_at),
+            }
+            for ev in events
+        ]
 
     obj = float(result.get("objective_value", 0.0))
     total_demand = float(result.get("total_demand", 0.0))
@@ -157,15 +266,38 @@ def main() -> int:
     print(f"  solver_status   : {status}")
     print("--------------------------------------\n")
 
-    out_dir = PROJECT_ROOT / "tmp"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / OUTPUT_FILENAME
-    out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"Resultado guardado en: {out_path}")
-    print("\nComparación con Jupyter:")
-    print("  1. En el notebook, usa el mismo archivo y hoja 'Parameters', solver glpk si usaste --solver glpk.")
-    print("  2. Anota objective_value y totales del notebook o exporta a JSON.")
-    print("  3. python scripts/compare_results.py --ref referencia_notebook.json --actual tmp/sand_04_02_2026_result.json")
+    out_json.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+    _write_csv(
+        out_kpis_csv,
+        kpi_rows,
+        [
+            "job_id",
+            "scenario_id",
+            "solver_name",
+            "solver_status",
+            "objective_value",
+            "coverage_ratio",
+            "total_demand",
+            "total_dispatch",
+            "total_unmet",
+            "records_used",
+            "osemosys_param_records",
+            "job_status",
+            "queued_at",
+            "started_at",
+            "finished_at",
+        ],
+    )
+    _write_csv(
+        out_events_csv,
+        event_rows,
+        ["id", "job_id", "event_type", "stage", "message", "progress", "created_at"],
+    )
+
+    print("Artefactos generados:")
+    print(f"  JSON resultado : {out_json}")
+    print(f"  CSV KPI        : {out_kpis_csv}")
+    print(f"  CSV eventos    : {out_events_csv}")
     return 0
 
 
