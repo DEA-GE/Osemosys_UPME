@@ -1012,7 +1012,11 @@ def _build_processing_result_from_csv_dir(csv_dir: str) -> ProcessingResult:
         if os.path.exists(fpath):
             df = pd.read_csv(fpath)
             if not df.empty and "VALUE" in df.columns:
-                values = df["VALUE"].astype(str).str.strip().tolist()
+                if name == "YEAR":
+                    # YEAR must stay numeric for downstream arithmetic in results processing.
+                    values = pd.to_numeric(df["VALUE"], errors="coerce").dropna().astype(int).tolist()
+                else:
+                    values = df["VALUE"].astype(str).str.strip().tolist()
                 sets[name] = values
 
     has_storage = all(
