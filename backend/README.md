@@ -462,10 +462,10 @@ curl http://localhost:8000/api/v1/health
 
 ### Ejecutar modelo local desde `../CSV` (sin BD/UPME)
 
-Este flujo no requiere conexiÃ³n al servidor UPME ni escenarios en base de datos.
+Este flujo no requiere conexión al servidor UPME ni escenarios en base de datos.
 Toma directamente los CSV en la carpeta `../CSV`, construye la instancia Pyomo y ejecuta el solver.
 
-1. Activar entorno virtual e instalar dependencias (desde la raÃ­z del repo):
+1. Activar entorno virtual e instalar dependencias (desde la raíz del repo):
 
 ```powershell
 cd backend
@@ -473,7 +473,7 @@ cd backend
 pip install -r requirements.txt
 ```
 
-2. Ejecutar la simulaciÃ³n con HiGHS y guardar el resultado JSON:
+2. Ejecutar la simulación con HiGHS y guardar el resultado JSON:
 
 ```powershell
 @'
@@ -501,7 +501,7 @@ print("saved:", out.resolve())
 
 Notas:
 - Este flujo usa el pipeline `CSV -> DataPortal -> Pyomo -> HiGHS`.
-- Los sets y parÃ¡metros en `../CSV` deben ser consistentes entre sÃ­ (por ejemplo, `YEAR.csv` vs `DaySplit.csv`, `TIMESLICE.csv` vs `Conversionl*.csv`).
+- Los sets y parámetros en `../CSV` deben ser consistentes entre sí (por ejemplo, `YEAR.csv` vs `DaySplit.csv`, `TIMESLICE.csv` vs `Conversionl*.csv`).
 
 Usuario seed:
 - `seed / seed123`
