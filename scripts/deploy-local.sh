@@ -207,6 +207,34 @@ ensure_external_network() {
   docker network create "${network_name}" >/dev/null
 }
 
+has_frontend_service() {
+  grep -Eq '^  frontend:$' "${REPO_ROOT}/docker-compose.yml"
+}
+
+normalize_unified_monorepo_env() {
+  if ! has_frontend_service; then
+    return 0
+  fi
+
+  if [[ "${PROJECT_NAME}" != "osemosys-backend" ]]; then
+    return 0
+  fi
+
+  log "Detectadas variables heredadas del despliegue backend-only; usando defaults del monorepo unificado"
+  PROJECT_NAME="osemosys"
+  export COMPOSE_PROJECT_NAME="${PROJECT_NAME}"
+  FRONTEND_PORT=80
+  FRONTEND_BIND_HOST=0.0.0.0
+  FRONTEND_API_UPSTREAM=api:8000
+  API_PORT=8010
+  API_BIND_HOST=127.0.0.1
+  POSTGRES_PORT=5433
+  POSTGRES_BIND_HOST=127.0.0.1
+  REDIS_PORT=6379
+  REDIS_BIND_HOST=127.0.0.1
+  BACKEND_BRIDGE_NETWORK="${BACKEND_BRIDGE_NETWORK:-osemosys_api_bridge}"
+}
+
 require_cmd docker
 require_cmd ss
 require_cmd sed
@@ -262,6 +290,8 @@ if [[ -z "${POSTGRES_PORT}" ]]; then
     POSTGRES_PORT=5432
   fi
 fi
+
+normalize_unified_monorepo_env
 
 require_non_default_secret_key "${SECRET_KEY}"
 ensure_external_network "${BACKEND_BRIDGE_NETWORK}"
