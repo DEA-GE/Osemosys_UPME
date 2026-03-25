@@ -3,6 +3,7 @@
 from .change_request import ChangeRequest
 from .change_request_value import ChangeRequestValue
 from .catalog_change_log import CatalogChangeLog
+from .categorie import Categorie
 from .dailytimebracket import Dailytimebracket
 from .daytype import Daytype
 from .emission import Emission
@@ -15,6 +16,7 @@ from .parameter_storage import ParameterStorage
 from .parameter_value_audit import ParameterValueAudit
 from .parameter_value import ParameterValue
 from .region import Region
+from .relation_categorie import RelationCategorie
 from .scenario import Scenario
 from .scenario_operation_job import ScenarioOperationJob
 from .scenario_operation_job_event import ScenarioOperationJobEvent
@@ -57,9 +59,11 @@ __all__ = [
     "ChangeRequest",
     "ChangeRequestValue",
     "CatalogChangeLog",
+    "Categorie",
     "SimulationJob",
     "SimulationJobEvent",
     "SimulationBenchmark",
+    "RelationCategorie",
     "DocumentType",
     "User",
 ]
