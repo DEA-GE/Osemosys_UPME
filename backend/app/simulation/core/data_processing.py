@@ -1144,7 +1144,7 @@ def _build_processing_result_from_csv_dir(csv_dir: str) -> ProcessingResult:
 
 def run_data_processing_from_excel(
     excel_path: str | Path,
-    csv_dir: str,
+    csv_dir: str | Path,
     *,
     sheet_name: str = "Parameters",
     div: int = 1,
@@ -1162,16 +1162,20 @@ def run_data_processing_from_excel(
     if not excel_path.is_file():
         raise FileNotFoundError(f"No existe el archivo Excel: {excel_path}")
 
-    logger.info("Generando CSVs desde Excel %s hacia %s", excel_path, csv_dir)
-    generate_csvs_from_excel(excel_path, csv_dir, sheet_name=sheet_name, div=div)
+    csv_dir = Path(csv_dir)
+    csv_dir.mkdir(parents=True, exist_ok=True)
+    csv_dir_str = str(csv_dir)
 
-    normalize_mode_of_operation_in_csv_dir(csv_dir)
+    logger.info("Generando CSVs desde Excel %s hacia %s", excel_path, csv_dir)
+    generate_csvs_from_excel(excel_path, csv_dir_str, sheet_name=sheet_name, div=div)
+
+    normalize_mode_of_operation_in_csv_dir(csv_dir_str)
 
     # 2. Eliminar valores fuera de índices (celda 8)
-    eliminar_valores_fuera_de_indices(csv_dir)
+    eliminar_valores_fuera_de_indices(csv_dir_str)
 
     # 3. Completar matrices (celdas 9-12)
-    path_csv = csv_dir + os.sep
+    path_csv = str(csv_dir) + os.sep
     completar_Matrix_Act_Ratio(path_csv, "InputActivityRatio.csv")
     completar_Matrix_Act_Ratio(path_csv, "OutputActivityRatio.csv")
 
@@ -1209,15 +1213,15 @@ def run_data_processing_from_excel(
             logger.debug("UDC eliminado para modo Excel: %s", _f)
 
     # 7. Reordenar columnas de ActivityRatio para DataPortal
-    reorder_activity_ratio_csvs_for_dataportal(csv_dir)
+    reorder_activity_ratio_csvs_for_dataportal(csv_dir_str)
 
     # 8. Validación de calidad de datos (común a Excel/CSV/BD).
     #    Aplica dead_year exclusion automáticamente y reporta bound_conflicts
     #    como warnings sin corregirlos.
-    quality = _apply_data_quality_validation(csv_dir, detected_during="excel")
+    quality = _apply_data_quality_validation(csv_dir_str, detected_during="excel")
 
     # Re-leer ProcessingResult tras la posible exclusión de años.
-    result = _build_processing_result_from_csv_dir(csv_dir)
+    result = _build_processing_result_from_csv_dir(csv_dir_str)
     result.data_quality_warnings = quality
     logger.info("Procesamiento desde Excel completado: %d sets, has_storage=%s, has_udc=%s",
                 len(result.sets), result.has_storage, result.has_udc)
