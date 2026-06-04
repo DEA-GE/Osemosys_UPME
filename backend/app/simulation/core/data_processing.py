@@ -150,6 +150,132 @@ def normalize_mode_of_operation_in_csv_dir(csv_dir: str) -> None:
         df.to_csv(ppath, index=False)
 
 
+def _value_ranges(values: pd.Series) -> tuple[float | None, float | None]:
+    abs_values = values.abs()
+    nonzero = abs_values[abs_values > 0]
+    min_abs = float(nonzero.min()) if not nonzero.empty else None
+    max_abs = float(abs_values.max()) if not abs_values.empty else None
+    return min_abs, max_abs
+
+
+def _scaling_parameter_role(parameter: str) -> str:
+    name = parameter.lower()
+    if "emissionlimit" in name or "upperlimit" in name or "max" in name:
+        return "limit_rhs"
+    if "lowerlimit" in name or "min" in name or "residualcapacity" in name:
+        return "bound_or_rhs"
+    if "cost" in name or "penalty" in name:
+        return "cost"
+    if "ratio" in name or "factor" in name or "split" in name:
+        return "coefficient"
+    if "demand" in name or "emission" in name:
+        return "rhs"
+    return "parameter"
+
+
+def _scaling_severity(
+    *,
+    min_abs_nonzero: float | None,
+    max_abs: float | None,
+    count_lt_1e_9: int,
+    count_ge_1e12: int,
+) -> str:
+    if count_ge_1e12 or (min_abs_nonzero is not None and min_abs_nonzero < 1e-12):
+        return "critical"
+    if (max_abs is not None and max_abs >= 1e9) or count_lt_1e_9:
+        return "high"
+    if min_abs_nonzero is not None and min_abs_nonzero < 1e-6:
+        return "warning"
+    if max_abs is not None and max_abs >= 1e6:
+        return "warning"
+    return "ok"
+
+
+def build_scaling_diagnostics(
+    csv_dir: str | Path,
+    *,
+    small_thresholds: tuple[float, ...] = (1e-12, 1e-9, 1e-6),
+    large_thresholds: tuple[float, ...] = (1e6, 1e9, 1e12),
+) -> dict:
+    """Scan every generated parameter CSV and report numeric scaling ranges.
+
+    This is intentionally non-destructive. It should run before optional cleanup
+    so each scenario has an auditable report of the source numeric ranges that
+    were fed into the model pipeline.
+    """
+    csv_dir = Path(csv_dir)
+    parameters: dict[str, dict] = {}
+    summary = {
+        "parameters_scanned": 0,
+        "parameters_with_numeric_values": 0,
+        "ok_parameters": 0,
+        "warning_parameters": 0,
+        "high_parameters": 0,
+        "critical_parameters": 0,
+    }
+
+    for path in sorted(csv_dir.glob("*.csv")):
+        parameter = path.stem
+        if parameter.isupper():
+            continue
+        try:
+            df = pd.read_csv(path, usecols=["VALUE"])
+        except (ValueError, pd.errors.EmptyDataError):
+            continue
+
+        summary["parameters_scanned"] += 1
+        values = pd.to_numeric(df["VALUE"], errors="coerce").dropna()
+        if values.empty:
+            continue
+
+        summary["parameters_with_numeric_values"] += 1
+        abs_values = values.abs()
+        nonzero_abs = abs_values[abs_values > 0]
+        min_abs, max_abs = _value_ranges(values)
+        counts_lt = {
+            f"count_abs_lt_{threshold:g}": int(((abs_values > 0) & (abs_values < threshold)).sum())
+            for threshold in small_thresholds
+        }
+        counts_ge = {
+            f"count_abs_ge_{threshold:g}": int((abs_values >= threshold).sum())
+            for threshold in large_thresholds
+        }
+        severity = _scaling_severity(
+            min_abs_nonzero=min_abs,
+            max_abs=max_abs,
+            count_lt_1e_9=counts_lt.get("count_abs_lt_1e-09", 0),
+            count_ge_1e12=counts_ge.get("count_abs_ge_1e+12", 0),
+        )
+        summary[f"{severity}_parameters"] += 1
+
+        parameters[parameter] = {
+            "role": _scaling_parameter_role(parameter),
+            "severity": severity,
+            "rows": int(len(values)),
+            "nonzero_values": int(len(nonzero_abs)),
+            "zero_values": int((abs_values == 0).sum()),
+            "min_abs_nonzero": min_abs,
+            "max_abs": max_abs,
+            **counts_lt,
+            **counts_ge,
+        }
+
+    flagged = {
+        name: data
+        for name, data in parameters.items()
+        if data["severity"] != "ok"
+    }
+    logger.info(
+        "Scaling diagnostics for %s: %d scanned, %d flagged",
+        csv_dir, summary["parameters_scanned"], len(flagged),
+    )
+    return {
+        "summary": summary,
+        "parameters": parameters,
+        "flagged_parameters": flagged,
+    }
+
+
 def apply_numerical_scaling_cleanup(
     csv_dir: str | Path,
     *,
@@ -199,25 +325,18 @@ def apply_numerical_scaling_cleanup(
             "action": action,
         }
 
-    def _ranges(values: pd.Series) -> tuple[float | None, float | None]:
-        abs_values = values.abs()
-        nonzero = abs_values[abs_values > 0]
-        min_abs = float(nonzero.min()) if not nonzero.empty else None
-        max_abs = float(abs_values.max()) if not abs_values.empty else None
-        return min_abs, max_abs
-
     for parameter in ("AnnualEmissionLimit", "ModelPeriodEmissionLimit"):
         loaded = _load_value_csv(f"{parameter}.csv")
         if loaded is None:
             continue
         path, df = loaded
-        before_min, before_max = _ranges(df["VALUE"])
+        before_min, before_max = _value_ranges(df["VALUE"])
         mask = df["VALUE"].abs() >= large_emission_limit_threshold
         changed = int(mask.sum())
         if changed:
             df.loc[mask, "VALUE"] = emission_limit_sentinel
             df.to_csv(path, index=False)
-        after_min, after_max = _ranges(df["VALUE"])
+        after_min, after_max = _value_ranges(df["VALUE"])
         _record(
             parameter,
             changed=changed,
@@ -235,7 +354,7 @@ def apply_numerical_scaling_cleanup(
     loaded = _load_value_csv(f"{parameter}.csv")
     if loaded is not None:
         path, df = loaded
-        before_min, before_max = _ranges(df["VALUE"])
+        before_min, before_max = _value_ranges(df["VALUE"])
         large_mask = df["VALUE"].abs() >= large_activity_limit_threshold
         small_mask = (df["VALUE"].abs() > 0) & (df["VALUE"].abs() < small_value_threshold)
         changed_large = int(large_mask.sum())
@@ -244,7 +363,7 @@ def apply_numerical_scaling_cleanup(
             df.loc[large_mask, "VALUE"] = emission_limit_sentinel
             df.loc[small_mask, "VALUE"] = 0.0
             df.to_csv(path, index=False)
-        after_min, after_max = _ranges(df["VALUE"])
+        after_min, after_max = _value_ranges(df["VALUE"])
         _record(
             parameter,
             changed=changed_large + changed_small,
@@ -268,13 +387,13 @@ def apply_numerical_scaling_cleanup(
         if loaded is None:
             continue
         path, df = loaded
-        before_min, before_max = _ranges(df["VALUE"])
+        before_min, before_max = _value_ranges(df["VALUE"])
         mask = (df["VALUE"].abs() > 0) & (df["VALUE"].abs() < small_value_threshold)
         changed = int(mask.sum())
         if changed:
             df.loc[mask, "VALUE"] = 0.0
             df.to_csv(path, index=False)
-        after_min, after_max = _ranges(df["VALUE"])
+        after_min, after_max = _value_ranges(df["VALUE"])
         _record(
             parameter,
             changed=changed,
@@ -1288,8 +1407,10 @@ def run_data_processing_from_excel(
     *,
     sheet_name: str = "Parameters",
     div: int = 1,
-    clean_numerical_scaling: bool = True,
+    scaling_diagnostics: bool = True,
+    scaling_cleanup_mode: str = "targeted",
     small_value_threshold: float = 1e-9,
+    clean_numerical_scaling: bool | None = None,
 ) -> ProcessingResult:
     """Pipeline completo: Excel SAND → CSVs temporales procesados (sin BD).
 
@@ -1341,8 +1462,21 @@ def run_data_processing_from_excel(
             path_csv,
         )
 
+    scaling_report: dict = {}
+    if scaling_diagnostics:
+        scaling_report = build_scaling_diagnostics(csv_dir_str)
+
+    if clean_numerical_scaling is not None:
+        scaling_cleanup_mode = "targeted" if clean_numerical_scaling else "off"
+    scaling_cleanup_mode = str(scaling_cleanup_mode or "off").lower()
+    if scaling_cleanup_mode not in {"off", "targeted"}:
+        raise ValueError(
+            "scaling_cleanup_mode debe ser 'off' o 'targeted'; "
+            f"recibido: {scaling_cleanup_mode!r}"
+        )
+
     scaling_cleanup: dict = {}
-    if clean_numerical_scaling:
+    if scaling_cleanup_mode == "targeted":
         scaling_cleanup = apply_numerical_scaling_cleanup(
             csv_dir_str,
             small_value_threshold=small_value_threshold,
@@ -1368,7 +1502,10 @@ def run_data_processing_from_excel(
     #    Aplica dead_year exclusion automáticamente y reporta bound_conflicts
     #    como warnings sin corregirlos.
     quality = _apply_data_quality_validation(csv_dir_str, detected_during="excel")
+    if scaling_report:
+        quality["scaling_diagnostics"] = scaling_report
     if scaling_cleanup:
+        quality["targeted_scaling_cleanup"] = scaling_cleanup
         quality["numerical_scaling_cleanup"] = scaling_cleanup
 
     # Re-leer ProcessingResult tras la posible exclusión de años.
