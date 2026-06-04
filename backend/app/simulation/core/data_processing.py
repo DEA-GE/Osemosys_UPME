@@ -150,6 +150,146 @@ def normalize_mode_of_operation_in_csv_dir(csv_dir: str) -> None:
         df.to_csv(ppath, index=False)
 
 
+def apply_numerical_scaling_cleanup(
+    csv_dir: str | Path,
+    *,
+    small_value_threshold: float = 1e-9,
+    emission_limit_sentinel: float = 9_999_999.0,
+    large_emission_limit_threshold: float = 1e12,
+    large_activity_limit_threshold: float = 1e9,
+) -> dict:
+    """Clean numerically harmful SAND sentinel/noise values in generated CSVs.
+
+    The SAND workbook can contain "effectively unconstrained" emission limits
+    as 1e17/1e22 and floating-point residue down to 1e-308. Those values expand
+    the LP RHS range enough for HiGHS to report scaling failures. This function
+    keeps the cleanup targeted to parameters where the model already has clear
+    defaults or where values below HiGHS' coefficient threshold are numerical
+    noise.
+    """
+    csv_dir = Path(csv_dir)
+    report: dict[str, dict] = {}
+
+    def _load_value_csv(file_name: str) -> tuple[Path, pd.DataFrame] | None:
+        path = csv_dir / file_name
+        if not path.exists():
+            return None
+        df = pd.read_csv(path)
+        if df.empty or "VALUE" not in df.columns:
+            return None
+        df["VALUE"] = pd.to_numeric(df["VALUE"], errors="coerce").fillna(0.0)
+        return path, df
+
+    def _record(
+        parameter: str,
+        *,
+        changed: int,
+        before_min_abs: float | None,
+        before_max_abs: float | None,
+        after_min_abs: float | None,
+        after_max_abs: float | None,
+        action: str,
+    ) -> None:
+        report[parameter] = {
+            "changed_values": int(changed),
+            "before_min_abs_nonzero": before_min_abs,
+            "before_max_abs": before_max_abs,
+            "after_min_abs_nonzero": after_min_abs,
+            "after_max_abs": after_max_abs,
+            "action": action,
+        }
+
+    def _ranges(values: pd.Series) -> tuple[float | None, float | None]:
+        abs_values = values.abs()
+        nonzero = abs_values[abs_values > 0]
+        min_abs = float(nonzero.min()) if not nonzero.empty else None
+        max_abs = float(abs_values.max()) if not abs_values.empty else None
+        return min_abs, max_abs
+
+    for parameter in ("AnnualEmissionLimit", "ModelPeriodEmissionLimit"):
+        loaded = _load_value_csv(f"{parameter}.csv")
+        if loaded is None:
+            continue
+        path, df = loaded
+        before_min, before_max = _ranges(df["VALUE"])
+        mask = df["VALUE"].abs() >= large_emission_limit_threshold
+        changed = int(mask.sum())
+        if changed:
+            df.loc[mask, "VALUE"] = emission_limit_sentinel
+            df.to_csv(path, index=False)
+        after_min, after_max = _ranges(df["VALUE"])
+        _record(
+            parameter,
+            changed=changed,
+            before_min_abs=before_min,
+            before_max_abs=before_max,
+            after_min_abs=after_min,
+            after_max_abs=after_max,
+            action=(
+                f"values >= {large_emission_limit_threshold:g} set to "
+                f"{emission_limit_sentinel:g}"
+            ),
+        )
+
+    parameter = "TotalTechnologyAnnualActivityUpperLimit"
+    loaded = _load_value_csv(f"{parameter}.csv")
+    if loaded is not None:
+        path, df = loaded
+        before_min, before_max = _ranges(df["VALUE"])
+        large_mask = df["VALUE"].abs() >= large_activity_limit_threshold
+        small_mask = (df["VALUE"].abs() > 0) & (df["VALUE"].abs() < small_value_threshold)
+        changed_large = int(large_mask.sum())
+        changed_small = int(small_mask.sum())
+        if changed_large or changed_small:
+            df.loc[large_mask, "VALUE"] = emission_limit_sentinel
+            df.loc[small_mask, "VALUE"] = 0.0
+            df.to_csv(path, index=False)
+        after_min, after_max = _ranges(df["VALUE"])
+        _record(
+            parameter,
+            changed=changed_large + changed_small,
+            before_min_abs=before_min,
+            before_max_abs=before_max,
+            after_min_abs=after_min,
+            after_max_abs=after_max,
+            action=(
+                f"{changed_large} values >= {large_activity_limit_threshold:g} set to "
+                f"{emission_limit_sentinel:g}; {changed_small} values with "
+                f"0 < abs(value) < {small_value_threshold:g} set to 0"
+            ),
+        )
+
+    for parameter in (
+        "ResidualCapacity",
+        "TotalTechnologyAnnualActivityLowerLimit",
+        "EmissionActivityRatio",
+    ):
+        loaded = _load_value_csv(f"{parameter}.csv")
+        if loaded is None:
+            continue
+        path, df = loaded
+        before_min, before_max = _ranges(df["VALUE"])
+        mask = (df["VALUE"].abs() > 0) & (df["VALUE"].abs() < small_value_threshold)
+        changed = int(mask.sum())
+        if changed:
+            df.loc[mask, "VALUE"] = 0.0
+            df.to_csv(path, index=False)
+        after_min, after_max = _ranges(df["VALUE"])
+        _record(
+            parameter,
+            changed=changed,
+            before_min_abs=before_min,
+            before_max_abs=before_max,
+            after_min_abs=after_min,
+            after_max_abs=after_max,
+            action=f"0 < abs(value) < {small_value_threshold:g} set to 0",
+        )
+
+    if report:
+        logger.info("Numerical scaling cleanup applied in %s: %s", csv_dir, report)
+    return report
+
+
 def _resolved_query():
     """Construye la consulta SQL que une osemosys_param_value con todas las tablas de catálogo.
     Devuelve param_name, region, technology, fuel, emission, timeslice, mode_of_operation,
@@ -1148,6 +1288,8 @@ def run_data_processing_from_excel(
     *,
     sheet_name: str = "Parameters",
     div: int = 1,
+    clean_numerical_scaling: bool = True,
+    small_value_threshold: float = 1e-9,
 ) -> ProcessingResult:
     """Pipeline completo: Excel SAND → CSVs temporales procesados (sin BD).
 
@@ -1199,6 +1341,13 @@ def run_data_processing_from_excel(
             path_csv,
         )
 
+    scaling_cleanup: dict = {}
+    if clean_numerical_scaling:
+        scaling_cleanup = apply_numerical_scaling_cleanup(
+            csv_dir_str,
+            small_value_threshold=small_value_threshold,
+        )
+
     # 5. UDC — deshabilitado en modo Excel (generate_notebook_csvs crea UDC con Tag=0;
     #    eliminamos esos archivos para que has_udc=False y no se apliquen restricciones)
     _udc_files = [
@@ -1219,6 +1368,8 @@ def run_data_processing_from_excel(
     #    Aplica dead_year exclusion automáticamente y reporta bound_conflicts
     #    como warnings sin corregirlos.
     quality = _apply_data_quality_validation(csv_dir_str, detected_during="excel")
+    if scaling_cleanup:
+        quality["numerical_scaling_cleanup"] = scaling_cleanup
 
     # Re-leer ProcessingResult tras la posible exclusión de años.
     result = _build_processing_result_from_csv_dir(csv_dir_str)
