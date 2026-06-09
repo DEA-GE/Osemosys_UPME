@@ -380,6 +380,7 @@ def apply_numerical_scaling_cleanup(
 
     for parameter in (
         "ResidualCapacity",
+        "TotalAnnualMaxCapacityInvestment",
         "TotalTechnologyAnnualActivityLowerLimit",
         "EmissionActivityRatio",
     ):
@@ -1482,6 +1483,10 @@ def run_data_processing_from_excel(
             small_value_threshold=small_value_threshold,
         )
 
+    post_cleanup_scaling_report: dict = {}
+    if scaling_report and scaling_cleanup:
+        post_cleanup_scaling_report = build_scaling_diagnostics(csv_dir_str)
+
     # 5. UDC — deshabilitado en modo Excel (generate_notebook_csvs crea UDC con Tag=0;
     #    eliminamos esos archivos para que has_udc=False y no se apliquen restricciones)
     _udc_files = [
@@ -1504,6 +1509,8 @@ def run_data_processing_from_excel(
     quality = _apply_data_quality_validation(csv_dir_str, detected_during="excel")
     if scaling_report:
         quality["scaling_diagnostics"] = scaling_report
+    if post_cleanup_scaling_report:
+        quality["post_cleanup_scaling_diagnostics"] = post_cleanup_scaling_report
     if scaling_cleanup:
         quality["targeted_scaling_cleanup"] = scaling_cleanup
         quality["numerical_scaling_cleanup"] = scaling_cleanup
