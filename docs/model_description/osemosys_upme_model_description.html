@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>OSeMOSYS UPME Model Description</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">OSeMOSYS UPME Model Description</h1>
+</header>
+<h1 id="osemosys-upme-model-description">OSeMOSYS UPME Model
+Description</h1>
+<h2 id="source-scenario">Source Scenario</h2>
+<p>The previous version of this documentation was generated from the
+repository’s root <code>CSV</code> input folder. That scenario had 1
+timeslice, 394 technologies, 109 fuels, 3 emissions, 33 years, 364,717
+Pyomo variable entries, and 409,207 active constraints.</p>
+<p>This updated version describes the attached SAND workbook:</p>
+<pre class="text"><code>SAND/PD_2TS_41D_2055_SAND_03Jun2026.xlsx</code></pre>
+<p>The workbook was converted to OSeMOSYS CSV inputs with the repository
+converter in <code>backend/app/simulation/core/excel_to_csv.py</code>,
+preserving all timeslices with <code>div=1</code>. The generated
+intermediate CSVs are stored under:</p>
+<pre class="text"><code>docs/model_description/generated/PD_2TS_41D_2055_SAND_03Jun2026_csv</code></pre>
+<p>The workbook conversion produced no active storage or UDC CSV files,
+so the Pyomo model was instantiated with <code>has_storage=False</code>
+and <code>has_udc=False</code>.</p>
+<h2 id="executive-summary">Executive Summary</h2>
+<p>This repository runs a Pyomo implementation of OSeMOSYS, a long-term
+energy-system optimization model. The updated
+<code>PD_2TS_41D_2055_SAND_03Jun2026.xlsx</code> instance is a large
+deterministic linear programming problem when solved with continuous
+capacity and activity decisions.</p>
+<p>Strictly, the code declares integer variables for technology unit
+investments through <code>NumberOfNewTechnologyUnits</code>. In this
+workbook, <code>CapacityOfOneTechnologyUnit</code> is zero everywhere,
+so those discrete unit-size constraints are inactive. In practical
+terms, the solved instance behaves as a linear program.</p>
+<h2 id="mathematical-problem-type">Mathematical Problem Type</h2>
+<p>The model minimizes total discounted system cost subject to
+technical, economic, demand, emissions, reserve-margin, and policy
+constraints.</p>
+<p>Objective:</p>
+<pre class="text"><code>Minimize total discounted system cost over all regions and years</code></pre>
+<p>The cost accounting includes investment costs, fixed and variable
+operating costs, emissions penalties, salvage value, disposal cost, and
+recovery value.</p>
+<h2 id="solver-interfaces">Solver Interfaces</h2>
+<p>The repository maps solver names to Pyomo solver factories as
+follows:</p>
+<table>
+<thead>
+<tr>
+<th>Requested solver</th>
+<th>Pyomo solver factory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>highs</code></td>
+<td><code>appsi_highs</code></td>
+</tr>
+<tr>
+<td><code>gurobi</code></td>
+<td><code>gurobi</code></td>
+</tr>
+<tr>
+<td><code>glpk</code></td>
+<td><code>glpk</code></td>
+</tr>
+</tbody>
+</table>
+<p>If <code>GLPX</code> is mentioned, the intended solver is almost
+certainly <code>GLPK</code>.</p>
+<h2 id="current-model-instance-size">Current Model Instance Size</h2>
+<p>The following counts were obtained by converting
+<code>PD_2TS_41D_2055_SAND_03Jun2026.xlsx</code> to CSV inputs and
+instantiating the repository’s Pyomo model.</p>
+<table>
+<thead>
+<tr>
+<th>Characteristic</th>
+<th style="text-align: right;">Count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Regions</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr>
+<td>Technologies</td>
+<td style="text-align: right;">405</td>
+</tr>
+<tr>
+<td>Fuels</td>
+<td style="text-align: right;">114</td>
+</tr>
+<tr>
+<td>Emissions</td>
+<td style="text-align: right;">11</td>
+</tr>
+<tr>
+<td>Years</td>
+<td style="text-align: right;">34</td>
+</tr>
+<tr>
+<td>Year range</td>
+<td style="text-align: right;">2022-2055</td>
+</tr>
+<tr>
+<td>Timeslices</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr>
+<td>Modes of operation</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr>
+<td>Active storage technologies</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td>UDC groups</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td>Pyomo variable entries</td>
+<td style="text-align: right;">744,574</td>
+</tr>
+<tr>
+<td>Declared integer variable entries</td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td>Binary variables</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td>Active constraints/equations</td>
+<td style="text-align: right;">812,409</td>
+</tr>
+<tr>
+<td>Approximate nonzero variable appearances in constraints</td>
+<td style="text-align: right;">4,642,606</td>
+</tr>
+</tbody>
+</table>
+<p>Important note: storage and user-defined constraint features exist in
+the codebase, but this workbook conversion did not produce active
+storage or UDC input files. Therefore storage variables, storage
+equations, and UDC equations are inactive for this documented run.</p>
+<h2 id="main-decision-and-accounting-variables">Main Decision and
+Accounting Variables</h2>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Variable family</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NewCapacity</code></td>
+<td>New technology capacity installed</td>
+</tr>
+<tr>
+<td><code>RateOfActivity</code></td>
+<td>Technology activity or dispatch by timeslice</td>
+</tr>
+<tr>
+<td><code>CapitalInvestment</code></td>
+<td>Investment cost accounting</td>
+</tr>
+<tr>
+<td><code>OperatingCost</code></td>
+<td>Fixed and variable operating cost accounting</td>
+</tr>
+<tr>
+<td><code>AnnualTechnologyEmission</code></td>
+<td>Emissions by technology, emission type, and year</td>
+</tr>
+<tr>
+<td><code>AnnualEmissions</code></td>
+<td>Total annual emissions by emission type</td>
+</tr>
+<tr>
+<td><code>TotalDiscountedCost</code></td>
+<td>Annual discounted system cost</td>
+</tr>
+<tr>
+<td><code>TotalCapacityInReserveMargin</code></td>
+<td>Capacity counted toward reserve margin</td>
+</tr>
+<tr>
+<td><code>NumberOfNewTechnologyUnits</code></td>
+<td>Integer unit count, declared but inactive in this dataset</td>
+</tr>
+</tbody>
+</table>
+<h2 id="largest-active-variable-blocks">Largest Active Variable
+Blocks</h2>
+<table>
+<thead>
+<tr>
+<th>Variable block</th>
+<th style="text-align: right;">Count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AnnualTechnologyEmissionByMode</code></td>
+<td style="text-align: right;">151,470</td>
+</tr>
+<tr>
+<td><code>AnnualTechnologyEmission</code></td>
+<td style="text-align: right;">151,470</td>
+</tr>
+<tr>
+<td><code>AnnualTechnologyEmissionPenaltyByEmission</code></td>
+<td style="text-align: right;">151,470</td>
+</tr>
+<tr>
+<td><code>RateOfActivity</code></td>
+<td style="text-align: right;">27,540</td>
+</tr>
+<tr>
+<td><code>VariableOperatingCost</code></td>
+<td style="text-align: right;">27,540</td>
+</tr>
+<tr>
+<td><code>NumberOfNewTechnologyUnits</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>NewCapacity</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>SalvageValue</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>DiscountedSalvageValue</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>OperatingCost</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>CapitalInvestment</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>DiscountedCapitalInvestment</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+</tbody>
+</table>
+<h2 id="main-constraint-categories">Main Constraint Categories</h2>
+<p>The model includes the following main groups of constraints:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Category</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Demand balance</td>
+<td>Energy supplied must satisfy demand by fuel, year, and
+timeslice</td>
+</tr>
+<tr>
+<td>Capacity constraints</td>
+<td>Activity cannot exceed available installed capacity</td>
+</tr>
+<tr>
+<td>Investment constraints</td>
+<td>New capacity is bounded by annual min/max investment limits</td>
+</tr>
+<tr>
+<td>Activity constraints</td>
+<td>Technologies may have lower or upper activity bounds</td>
+</tr>
+<tr>
+<td>Emissions accounting and limits</td>
+<td>Emissions are calculated, penalized, and optionally bounded</td>
+</tr>
+<tr>
+<td>Reserve margin</td>
+<td>Capacity adequacy constraints for selected technologies and
+fuels</td>
+</tr>
+<tr>
+<td>User-defined constraints</td>
+<td>Supported by the code, but inactive in this workbook conversion</td>
+</tr>
+<tr>
+<td>Storage constraints</td>
+<td>Supported by the code, but inactive in this workbook conversion</td>
+</tr>
+</tbody>
+</table>
+<h2 id="largest-active-constraint-blocks">Largest Active Constraint
+Blocks</h2>
+<table>
+<thead>
+<tr>
+<th>Constraint family</th>
+<th style="text-align: right;">Active constraints</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AnnualEmissionProductionByMode</code></td>
+<td style="text-align: right;">151,470</td>
+</tr>
+<tr>
+<td><code>AnnualEmissionProduction</code></td>
+<td style="text-align: right;">151,470</td>
+</tr>
+<tr>
+<td><code>EmissionPenaltyByTechAndEmission</code></td>
+<td style="text-align: right;">151,470</td>
+</tr>
+<tr>
+<td><code>ConstraintCapacity</code></td>
+<td style="text-align: right;">27,540</td>
+</tr>
+<tr>
+<td><code>PlannedMaintenance</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>UndiscountedCapitalInvestment</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>DiscountedCapitalInvestment_constraint</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>OperatingCostsVariable</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>OperatingCostsFixedAnnual</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>OperatingCostsTotalAnnual</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>DiscountedOperatingCostsTotalAnnual</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>TotalDiscountedCostByTechnology_constraint</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>TotalAnnualMinCapacityConstraint</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>SalvageValueAtEndOfPeriod1</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>SalvageValueDiscountedToStartYear</code></td>
+<td style="text-align: right;">13,770</td>
+</tr>
+</tbody>
+</table>
+<p>In optimization terminology, the word “equations” is often used
+informally for all expanded active constraints, including both
+equalities and inequalities. This documented workbook instance has
+812,409 active constraints/equations.</p>
+<h2 id="technologies-with-restrictions">Technologies With
+Restrictions</h2>
+<p>There are 405 technologies in the active model set. Using non-default
+capacity, activity, reserve-margin, renewable-energy tag, unit-size, and
+UDC parameters as the definition of having an active restriction, all
+405 technologies have at least one active restriction in this
+workbook-derived instance.</p>
+<table>
+<thead>
+<tr>
+<th>Restriction parameter</th>
+<th style="text-align: right;">Technologies affected</th>
+<th style="text-align: right;">Active rows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TotalAnnualMaxCapacity</code></td>
+<td style="text-align: right;">404</td>
+<td style="text-align: right;">13,736</td>
+</tr>
+<tr>
+<td><code>TotalAnnualMaxCapacityInvestment</code></td>
+<td style="text-align: right;">405</td>
+<td style="text-align: right;">13,770</td>
+</tr>
+<tr>
+<td><code>TotalAnnualMinCapacity</code></td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">60</td>
+</tr>
+<tr>
+<td><code>TotalAnnualMinCapacityInvestment</code></td>
+<td style="text-align: right;">16</td>
+<td style="text-align: right;">209</td>
+</tr>
+<tr>
+<td><code>TotalTechnologyAnnualActivityUpperLimit</code></td>
+<td style="text-align: right;">404</td>
+<td style="text-align: right;">13,736</td>
+</tr>
+<tr>
+<td><code>TotalTechnologyAnnualActivityLowerLimit</code></td>
+<td style="text-align: right;">211</td>
+<td style="text-align: right;">6,084</td>
+</tr>
+<tr>
+<td><code>TotalTechnologyModelPeriodActivityUpperLimit</code></td>
+<td style="text-align: right;">405</td>
+<td style="text-align: right;">405</td>
+</tr>
+<tr>
+<td><code>ReserveMarginTagTechnology</code></td>
+<td style="text-align: right;">25</td>
+<td style="text-align: right;">850</td>
+</tr>
+</tbody>
+</table>
+<p>No active technology restrictions were found for the following
+categories in this workbook-derived instance:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Parameter or category</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CapacityOfOneTechnologyUnit</code></td>
+<td>All zero, so integer unit constraints are inactive</td>
+</tr>
+<tr>
+<td><code>TotalTechnologyModelPeriodActivityLowerLimit</code></td>
+<td>No nonzero active values</td>
+</tr>
+<tr>
+<td><code>RETagTechnology</code></td>
+<td>No active technology tags</td>
+</tr>
+<tr>
+<td><code>UDCMultiplierTotalCapacity</code></td>
+<td>No UDC CSV was generated for this workbook</td>
+</tr>
+<tr>
+<td>Storage technology constraints</td>
+<td>Storage set is empty</td>
+</tr>
+</tbody>
+</table>
+<h2 id="suggested-narrative-description">Suggested Narrative
+Description</h2>
+<p>The model can be described as follows:</p>
+<blockquote>
+<p>We run a Pyomo implementation of OSeMOSYS, a deterministic long-term
+energy-system optimization model. The model minimizes total discounted
+system cost while satisfying demand, capacity, activity, emissions,
+reserve-margin, and policy constraints. The documented instance is based
+on <code>PD_2TS_41D_2055_SAND_03Jun2026.xlsx</code> and covers 1 region,
+405 technologies, 114 fuels, 11 emissions, 2 timeslices, and 34 model
+years from 2022 through 2055. It expands to 744,574 Pyomo variable
+entries and 812,409 active constraints. Although the formulation
+supports integer capacity-unit decisions, this workbook has no active
+unit-size constraints, so the solved problem is effectively a large
+linear program. The model can be solved with HiGHS, Gurobi, or GLPK
+through Pyomo.</p>
+</blockquote>
+<h2 id="repository-references">Repository References</h2>
+<p>Key implementation files:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>File</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend/app/simulation/core/model_definition.py</code></td>
+<td>Defines sets, parameters, variables, objective, and constraints</td>
+</tr>
+<tr>
+<td><code>backend/app/simulation/core/instance_builder.py</code></td>
+<td>Loads CSV sets and parameters into the Pyomo model</td>
+</tr>
+<tr>
+<td><code>backend/app/simulation/core/excel_to_csv.py</code></td>
+<td>Converts SAND Excel workbooks into OSeMOSYS CSV inputs</td>
+</tr>
+<tr>
+<td><code>backend/app/simulation/core/solver.py</code></td>
+<td>Maps solver names and runs HiGHS, Gurobi, or GLPK</td>
+</tr>
+<tr>
+<td><code>backend/app/simulation/README.md</code></td>
+<td>Documents the simulation workflow</td>
+</tr>
+</tbody>
+</table>
+<p>External OSeMOSYS references:</p>
+<ul>
+<li>OSeMOSYS documentation:
+https://osemosys.readthedocs.io/en/latest/</li>
+<li>OSeMOSYS model structure:
+https://osemosys.readthedocs.io/en/latest/manual/Structure%20of%20OSeMOSYS.html</li>
+<li>OSeMOSYS project overview: https://osemosys.github.io/about/</li>
+</ul>
+</body>
+</html>
