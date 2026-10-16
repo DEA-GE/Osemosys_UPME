@@ -201,9 +201,14 @@ def build_employment_results(raw_long: pd.DataFrame) -> tuple[pd.DataFrame, pd.D
         factors_for_merge,
         on=["employment_technology", "year", "factor_type"],
         how="left",
+        validate="many_to_one",
     )
     missing_factor = employment[employment["factor_value"].isna()].copy()
     employment = employment[employment["factor_value"].notna()].copy()
+    expected_units = employment["factor_type"].map({CONSTRUCTION_FACTOR_TYPE: "job-yr/MW", OM_FACTOR_TYPE: "job/MW"})
+    if not employment["factor_unit"].eq(expected_units).all():
+        raise ValueError("Unsupported employment-factor units in workbook results")
+    employment["employment_unit"] = employment["factor_type"].map({CONSTRUCTION_FACTOR_TYPE: "FTE-years", OM_FACTOR_TYPE: "annual FTE"})
     employment["employment_fte"] = (
         employment["component_capacity_mw"] * employment["factor_value"]
     )
@@ -254,6 +259,7 @@ def build_employment_results(raw_long: pd.DataFrame) -> tuple[pd.DataFrame, pd.D
         "factor_source",
         "default_source",
         "employment_fte",
+        "employment_unit",
         "mapping_note",
     ]
     employment = employment[[col for col in ordered_cols if col in employment.columns]]
@@ -269,6 +275,7 @@ def build_employment_results(raw_long: pd.DataFrame) -> tuple[pd.DataFrame, pd.D
                 "employment_variable",
                 "factor_type",
                 "job_type",
+                "employment_unit",
             ],
             dropna=False,
             as_index=False,
@@ -526,6 +533,7 @@ def _add_formulas_and_tables(output_path: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--baseline-workbook", type=Path, help="Read the preserved RawResultsLong sheet instead of requiring original scenario exports")
     parser.add_argument(
         "--inputs",
         nargs="+",
@@ -550,10 +558,15 @@ def main() -> None:
     args = parse_args()
     inputs = [path.resolve() for path in args.inputs]
     missing = [path for path in inputs if not path.exists()]
-    if missing:
+    if missing and args.baseline_workbook is None:
         raise FileNotFoundError(f"Missing input workbook(s): {missing}")
 
-    raw_long = load_results_long(inputs)
+    if args.baseline_workbook is not None:
+        if args.baseline_workbook.resolve() == args.output.resolve():
+            raise ValueError("Output must not overwrite the baseline workbook")
+        raw_long = pd.read_excel(args.baseline_workbook, sheet_name="RawResultsLong")
+    else:
+        raw_long = load_results_long(inputs)
     employment, aggregated, diagnostics = build_employment_results(raw_long)
     write_workbook(
         raw_long=raw_long,
