@@ -310,3 +310,71 @@ def test_calculate_employment_outputs_cumulative_total_combines_cm_and_om() -> N
     cumulative_by_year = {row["year"]: row["value"] for row in cumulative_total}
     assert cumulative_by_year[2025] == pytest.approx(2500.0)
     assert cumulative_by_year[2026] == pytest.approx(3500.0)
+
+
+@pytest.mark.parametrize("prefix", ["AN", "CA", "IN", "NE", "OR", "SE", "SO"])
+def test_regional_mapping_preserves_rooftop_variants_and_hybrid_components(prefix):
+    mapping = load_technology_mapping()
+    for code in ["PWRSOLRTP", "PWRSOLRTP_ZNI", "PWRSOLUGE", "PWRSOLUPE", "PWRSOLUGE_BAT", "PWRNUC"]:
+        assert mapping[f"{prefix}_{code}"] == mapping[code]
+
+
+@pytest.mark.parametrize("failure", ["duplicate", "missing", "units", "negative", "nan"])
+def test_invalid_factor_inputs_fail_without_silent_under_or_double_counting(failure):
+    factors = _factors()
+    if failure == "duplicate":
+        factors = pd.concat([factors, factors.iloc[[0]]], ignore_index=True)
+    elif failure == "missing":
+        factors = factors.drop(index=0)
+    elif failure == "units":
+        factors.loc[0, "Unit"] = "job-yr/GW"
+    elif failure == "negative":
+        factors.loc[0, "Value_Numeric"] = -1
+    else:
+        factors.loc[0, "Value_Numeric"] = float("nan")
+    solution = {"new_capacity": [{"technology_name": "PWRSOLUGE", "year": 2025, "new_capacity": 1}]}
+    with pytest.raises(ValueError):
+        calculate_employment_outputs(solution, factors=factors,
+            mapping={"PWRSOLUGE": [EmploymentComponent("Utility-scale solar PV")]}, assumptions=_assumptions())
+
+
+def test_hand_calculated_two_year_construction_fixture_and_annual_om():
+    factors = pd.DataFrame([
+        {"Technology": "Utility-scale solar PV", "Year": year, "Factor_Type": phase, "Job_Type": "Direct", "Unit": unit, "Source": "fixture", "Value_Numeric": value}
+        for year in [2028, 2029]
+        for phase, unit, value in [(CONSTRUCTION_FACTOR_TYPE, "job-yr/MW", 6), (OM_FACTOR_TYPE, "job/MW", .2)]
+    ])
+    solution = {
+        "new_capacity": [{"technology_name": "PWRSOLUGE", "year": 2028, "new_capacity": .315576}],
+        "intermediate_variables": {"AccumulatedNewCapacity": [
+            {"index": ["RE1", "PWRSOLUGE", year], "value": .315576} for year in [2028, 2029]]},
+    }
+    rows = calculate_employment_outputs(solution, factors=factors,
+        mapping={"PWRSOLUGE": [EmploymentComponent("Utility-scale solar PV")]},
+        assumptions={"Utility-scale solar PV": TechnologyAssumption("Utility-scale solar PV", 2, 25)})
+    assert _by_variable(rows, EMPLOYMENT_FTEYEAR_CONSMANU_DIRECT)[0]["value"] == pytest.approx(60)
+    construction = _by_variable(rows, EMPLOYMENT_FTE_CONSMANU_DIRECT_ANNUALIZED_IN_HORIZON)
+    assert {r["year"]: r["value"] for r in construction} == pytest.approx({2027: 30, 2028: 30})
+    assert [r["value"] for r in _by_variable(rows, EMPLOYMENT_FTE_OM_DIRECT_ANNUAL)] == pytest.approx([2, 2])
+
+
+def test_snapshot_checksum_is_verified(tmp_path, monkeypatch):
+    import json
+    from app.services import employment_factors_service as service
+    (tmp_path / "employment_factor_provenance.json").write_text(json.dumps({"output_sha256": {"bad.csv": "0" * 64}}))
+    (tmp_path / "bad.csv").write_text("tampered")
+    monkeypatch.setattr(service, "SNAPSHOT_DIR", tmp_path)
+    with pytest.raises(ValueError, match="checksum"):
+        service._snapshot_file("bad.csv")
+
+
+def test_runtime_snapshot_and_all_mapped_capacity_units_are_compatible():
+    from app.services.employment_factors_service import load_model_employment_factors, load_technology_assumptions, employment_factor_provenance
+    mapping = load_technology_mapping()
+    factors = load_model_employment_factors()
+    assert employment_factor_provenance()["factor_table_sha256"]
+    assert load_technology_assumptions(mapping)["Nuclear"].construction_time_years > 0
+    solution = {"new_capacity": [{"technology_name": "AN_PWRSOLUGE", "year": 2025, "new_capacity": .315576}]}
+    rows = calculate_employment_outputs(solution)
+    assert _by_variable(rows, EMPLOYMENT_FTEYEAR_CONSMANU_DIRECT)[0]["value"] > 0
+    assert factors[factors.Technology == "Rooftop solar PV"].Value_Numeric.notna().all()

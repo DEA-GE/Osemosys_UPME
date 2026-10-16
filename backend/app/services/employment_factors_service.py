@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from dataclasses import dataclass
-from math import floor
+from math import floor, isfinite
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +47,25 @@ EMPLOYMENT_VARIABLE_BY_FACTOR_TYPE = {
 }
 
 DEFAULT_MAPPING_PATH = Path(__file__).with_name("employment_factors_mapping.yaml")
+SNAPSHOT_DIR = Path(__file__).resolve().parents[1] / "data" / "employment_factor_snapshot"
+
+
+def _snapshot_file(name: str) -> Path:
+    """Verify the immutable generated-data snapshot before consuming it."""
+    manifest = json.loads((SNAPSHOT_DIR / "employment_factor_provenance.json").read_text(encoding="utf-8"))
+    path = SNAPSHOT_DIR / name
+    expected = manifest["output_sha256"].get(name)
+    if not expected or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+        raise ValueError(f"Employment factor snapshot checksum mismatch: {name}")
+    return path
+
+
+def employment_factor_provenance() -> dict[str, Any]:
+    manifest = json.loads((SNAPSHOT_DIR / "employment_factor_provenance.json").read_text(encoding="utf-8"))
+    return {key: manifest[key] for key in (
+        "source_repository", "source_revision", "source_tree_dirty", "source_content_sha256",
+        "scenario", "productivity_ratio", "employment_multiplier", "solar_transfer_status",
+    )} | {"factor_table_sha256": manifest["output_sha256"]["employment_factors_model_default_2024_2055.csv"]}
 
 
 @dataclass(frozen=True)
@@ -99,8 +120,8 @@ def load_technology_mapping(path: str | Path | None = None) -> dict[str, list[Em
             if not employment_technology:
                 raise ValueError(f"Component for {model_technology!r} is missing employment_technology.")
             multiplier = float(component.get("multiplier", 1.0))
-            if multiplier < 0:
-                raise ValueError(f"Component multiplier for {model_technology!r} cannot be negative.")
+            if not isfinite(multiplier) or multiplier < 0:
+                raise ValueError(f"Component multiplier for {model_technology!r} must be finite and non-negative.")
             note = component.get("note")
             components.append(
                 EmploymentComponent(
@@ -110,18 +131,28 @@ def load_technology_mapping(path: str | Path | None = None) -> dict[str, list[Em
                 )
             )
         parsed[str(model_technology)] = components
+    prefixes = raw.get("regional_prefixes", [])
+    if not isinstance(prefixes, list) or any(p not in {"AN", "CA", "IN", "NE", "OR", "SE", "SO"} for p in prefixes):
+        raise ValueError("Unsupported employment mapping regional prefix")
+    for prefix in prefixes:
+        for code, components in list(parsed.items()):
+            if code.startswith("PWR"):
+                regional_code = f"{prefix}_{code}"
+                if regional_code in parsed:
+                    raise ValueError(f"Duplicate regional employment mapping: {regional_code}")
+                parsed[regional_code] = components
     return parsed
 
 
 def load_model_employment_factors() -> pd.DataFrame:
-    """Load model-ready employment factors from the external package."""
+    """Load a checksum-verified factor snapshot through the pinned package API."""
     try:
         from colombia_employment_factors import get_model_employment_factors
     except ImportError as exc:  # pragma: no cover - exercised only in broken envs
         raise RuntimeError(
             "colombia-employment-factors is required for employment post-processing."
         ) from exc
-    return get_model_employment_factors()
+    return get_model_employment_factors(_snapshot_file("employment_factors_model_default_2024_2055.csv"))
 
 
 def load_technology_assumptions(
@@ -144,8 +175,9 @@ def load_technology_assumptions(
         }
     )
     assumptions: dict[str, TechnologyAssumption] = {}
+    snapshot = _snapshot_file("technology_assumptions_2024.csv")
     for technology in technologies:
-        raw = get_technology_assumption(technology)
+        raw = get_technology_assumption(technology, snapshot)
 
         def _get(name: str):
             if isinstance(raw, dict):
@@ -194,7 +226,7 @@ def _coerce_positive_float(value, *, field_name: str) -> float:
 
 def _factor_lookup(factors: pd.DataFrame) -> dict[tuple[str, int, str], list[dict[str, Any]]]:
     """Index direct C&M and O&M factor rows by technology, year, and factor type."""
-    required = {"Technology", "Year", "Factor_Type", "Job_Type", "Value_Numeric"}
+    required = {"Technology", "Year", "Factor_Type", "Job_Type", "Unit", "Value_Numeric"}
     missing = required - set(factors.columns)
     if missing:
         raise ValueError(f"Employment factors missing required columns: {sorted(missing)}")
@@ -205,7 +237,13 @@ def _factor_lookup(factors: pd.DataFrame) -> dict[tuple[str, int, str], list[dic
     ].copy()
     eligible["Year"] = pd.to_numeric(eligible["Year"], errors="coerce").astype("Int64")
     eligible["Value_Numeric"] = pd.to_numeric(eligible["Value_Numeric"], errors="coerce")
-    eligible = eligible.dropna(subset=["Year", "Value_Numeric"])
+    if eligible[["Year", "Value_Numeric"]].isna().any().any() or not eligible["Value_Numeric"].map(lambda x: isfinite(x) and x >= 0).all():
+        raise ValueError("Employment factors must have valid years and finite non-negative values")
+    units = eligible["Factor_Type"].map({CONSTRUCTION_FACTOR_TYPE: "job-yr/MW", OM_FACTOR_TYPE: "job/MW"})
+    if not eligible["Unit"].eq(units).all():
+        raise ValueError("Unsupported employment-factor units; expected per-MW factors")
+    if eligible.duplicated(["Technology", "Year", "Factor_Type"]).any():
+        raise ValueError("Duplicate model employment factors would double-count employment")
 
     lookup: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
     for row in eligible.to_dict(orient="records"):
@@ -321,6 +359,8 @@ def _component_factor_records(
             (component.employment_technology, int(capacity_row["year"]), factor_type),
             [],
         )
+        if not factor_rows:
+            raise ValueError(f"Missing employment factor: {component.employment_technology}/{capacity_row['year']}/{factor_type}")
         component_capacity_mw = capacity_mw * component.multiplier
         for factor in factor_rows:
             factor_value = float(factor["Value_Numeric"])
@@ -416,7 +456,9 @@ def calculate_employment_outputs(
         if assumptions is not None
         else load_technology_assumptions(resolved_mapping)
     )
-    factors_by_key = _factor_lookup(resolved_factors)
+    represented = {component.employment_technology for components in resolved_mapping.values() for component in components}
+    relevant_factors = resolved_factors[resolved_factors["Technology"].isin(represented)] if "Technology" in resolved_factors else resolved_factors
+    factors_by_key = _factor_lookup(relevant_factors)
 
     outputs: list[dict[str, Any]] = []
     annual_rows: dict[tuple, dict[str, Any]] = {}
@@ -587,5 +629,6 @@ def attach_employment_outputs(solution: dict[str, Any]) -> dict[str, Any]:
     """Mutate ``solution`` with derived employment rows and return it."""
     employment_outputs = calculate_employment_outputs(solution)
     solution["employment_outputs"] = employment_outputs
+    solution["employment_factor_provenance"] = employment_factor_provenance()
     logger.info("Calculated %d direct employment output rows.", len(employment_outputs))
     return solution

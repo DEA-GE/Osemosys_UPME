@@ -431,6 +431,7 @@ def _iter_typed_output_rows(
             "model_capacity_pj_per_year": row.get("model_capacity_pj_per_year"),
             "model_capacity_mw": row.get("model_capacity_mw"),
             "components": row.get("components", []),
+            "employment_factor_provenance": solution.get("employment_factor_provenance", {}),
         }
         yield r
 

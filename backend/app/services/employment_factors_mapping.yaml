@@ -1,4 +1,5 @@
 version: 1
+regional_prefixes: [AN, CA, IN, NE, OR, SE, SO]
 description: >
   Mapping from OSeMOSYS UPME model technology codes to the canonical
   technology names in colombia-employment-factors. Multipliers express the MW
