@@ -6,7 +6,7 @@ objective, constraints, solver status, or feasibility.
 
 ## Source Data
 
-Employment factors and technology assumptions are loaded from:
+Employment factors originate in:
 
 ```text
 https://github.com/DEA-GE/colombia-employment-factors
@@ -21,11 +21,26 @@ from colombia_employment_factors import (
 )
 ```
 
-`get_model_employment_factors()` provides yearly direct employment factors for
+The package API dependency is pinned to commit
+`f46e8b480f965e68bd4d5734e5e9ab708af593a7`. The data used by this backend are
+the explicit, checksum-verified snapshot under
+`app/data/employment_factor_snapshot/`, passed to those APIs using their
+existing optional path arguments. They do not depend on a moving branch or
+on whichever packaged CSV happens to be installed locally.
+
+The snapshot manifest identifies committed input/code revision
+`e1dcd8328f197608c2b7dc3d5b9c29cd7d031324` and the exact input/content hashes
+used to generate the data. The dependency pin identifies the subsequent published
+artifact commit containing those outputs. The build-time dirty flag includes
+generated files awaiting that artifact commit; it does not imply uncommitted
+methodology inputs. No manifest attempts to embed its own enclosing commit SHA.
+The generated-data checksum identifies the actual consumed factors.
+
+`get_model_employment_factors(snapshot_path)` provides yearly employment factors for
 2024-2055. The factors have already been projected by the package methodology,
 including decline/productivity assumptions where applicable.
 
-`get_technology_assumption(technology)` provides:
+`get_technology_assumption(technology, snapshot_path)` provides:
 
 - `construction_time_years`
 - `lifetime_years`
@@ -44,6 +59,10 @@ backend/app/services/employment_factors_mapping.yaml
 ```
 
 Each OSeMOSYS technology maps to one or more employment-factor technologies.
+The seven configured regional prefixes `AN`, `CA`, `IN`, `NE`, `OR`, `SE`, `SO`
+expand to the same components (for example `AN_PWRSOLRTP`). Technology names and
+region identifiers remain distinct in results; no regional employment is summed
+merely because it shares a canonical factor.
 The `multiplier` field is the MW of employment-factor technology represented by
 one MW of model technology.
 
@@ -233,6 +252,13 @@ This allows downstream charts to show either:
 - component details, such as solar PV and grid battery contributions inside
   `PWRSOLUGE_BAT`.
 
+Every persisted employment row also carries compact
+`employment_factor_provenance` in `index_json`: source revision/content hash,
+factor-table checksum, scenario, productivity assumption and solar readiness.
+No database schema migration is required. Duplicate model-factor keys, missing
+mapped factors, unsupported units and non-finite/negative factors fail explicitly.
+Non-power technologies without a mapping remain outside this calculation.
+
 ## Reporting Guidance
 
 Use `Employment_FTE_Total_Direct_Annual_InHorizon` for annual employment charts.
@@ -244,3 +270,73 @@ such as cumulative employment by 2030, 2035, or 2040.
 Keep `Employment_FTEyear_ConsManu_Direct` available for audit because it is the
 direct output of multiplying `NewCapacity` by the construction/manufacturing
 factor before annualization.
+
+Current reporting uses annual model years. Summing annual FTE over one-year
+intervals gives FTE-years; divide by the interval duration for an average annual
+workforce. Irregular/representative years require an explicitly approved period
+weighting convention and must not be interpreted as annual consecutive years.
+O&M uses current-year factors on surviving new-build capacity, not vintage
+factors or residual/historical capacity. These conventions are unchanged.
+
+## Regeneration, comparison and current gaps
+
+The source repository's `docs/METHODOLOGY_UPDATES.md` documents input extraction,
+six solar transfer ratios, category boundaries and selective productivity policy.
+The chosen 0.32 ratio is an approximate modelling assumption; its exact inverse
+is 3.125. It is not applied to Colombia I-JEDI, its derived rooftop factors,
+already-LATAM factors, global manufacturing or nuclear O&M.
+
+**Current solar status:** the full-precision US utility run is missing. The six-ratio
+implementation is tested, but the published rooftop series remains exactly
+unchanged and is explicitly labelled pending. Rounded screenshots are not used
+as production factors. Nuclear also remains unchanged; a separate SMR factor
+requires a specified design/site and compatible phase-specific evidence.
+
+After an approved source build, run from the OSeMOSYS repository root:
+
+```sh
+python backend/scripts/sync_employment_factor_snapshot.py --source-dir ../colombia-employment-factors/data/processed
+python backend/scripts/compare_employment_factors.py --baseline-workbook employment_results_PD_CN_PA.xlsx --old-factors ../colombia-employment-factors/data/audit/baseline_model_default_23b7f592.csv --output-dir backend/reports/employment_methodology/central
+```
+
+The comparison replays the same observed capacity cells with old/new factors
+through the runtime calculation service. `factor_comparison.csv` includes
+absolute/percentage changes; `employment_comparison.csv` preserves scenario,
+technology, region, year, phase-specific variable and units. Undefined percentage
+changes from a zero baseline remain blank. Summaries add only construction
+cohort FTE-years; annual and cumulative rows are never added together.
+
+The preserved workbook contains 2,999 blank capacity cells, including historical
+years. The replay excludes them consistently and lists them in
+`unobserved_capacity_cells.csv`, without substituting zero. The original scenario
+exports are unavailable, so completeness of the original solver output cannot
+be independently restored. No new optimisation, solver licence or database is
+needed for this factor comparison.
+
+`--new-factors PATH` selects an isolated scenario factor CSV for comparison.
+The source repository builds low/high employment-intensity cases and a
+`--productivity-transfer none` source-refresh reference. Runtime sync accepts
+only central/selective/catalogue builds. This keeps sensitivities out of the
+default runtime data.
+
+To rebuild the existing workbook report from preserved inputs:
+
+```sh
+python backend/scripts/build_employment_results_workbook.py --baseline-workbook employment_results_PD_CN_PA.xlsx --output employment_results_methodology_review.xlsx
+```
+
+It refuses to overwrite the input baseline. Construction and O&M output units
+are explicit. It generates the six base sheets, not additional manually maintained
+baseline pivot/display sheets. Formula-based workbooks require Excel recalculation; CSV replay
+outputs are computed directly in Python. No native Excel cache validation is
+claimed.
+
+For a separate source rebuild, use `--output-dir PATH` in the factor builder,
+then run `backend/scripts/validate_employment_factor_delivery.py --source-repo
+../colombia-employment-factors --rebuild-dir PATH` from the OSeMOSYS repository.
+This verifies input/output hashes, packaged copies, deterministic regeneration,
+sensitivity ordering and deliberately unchanged technology factors.
+
+Rollback restores the prior source/data snapshot and matching checksum manifest
+through reviewed revert changes. Original workbooks, the baseline results
+workbook contents are preserved. Do not reset branches.
